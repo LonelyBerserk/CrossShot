@@ -1,49 +1,153 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import {
+  loadAppSettings,
+  saveAppSettings,
+  type AppLanguage,
+  type AppTheme,
+} from "./services/settings";
+
 import "./App.css";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const { t, i18n } = useTranslation();
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  // Application settings
+  const [language, setLanguage] = useState<AppLanguage>("ru");
+  const [theme, setTheme] = useState<AppTheme>("system");
+
+  // Initialization and language switching states
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [languageChanging, setLanguageChanging] = useState(false);
+
+  // Load settings when application starts
+  useEffect(() => {
+    let isMounted = true;
+
+    async function initializeSettings() {
+      try {
+        const settings = await loadAppSettings();
+
+        if (!isMounted) return;
+
+        // Apply saved language
+        await i18n.changeLanguage(settings.language);
+
+        if (!isMounted) return;
+
+        setLanguage(settings.language);
+        setTheme(settings.theme);
+      } catch (error) {
+        console.error("Failed to load application settings:", error);
+      } finally {
+        if (isMounted) {
+          setSettingsLoaded(true);
+        }
+      }
+    }
+
+    void initializeSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [i18n]);
+
+  // Apply selected theme
+  useEffect(() => {
+    if (theme === "system") {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = theme;
+    }
+  }, [theme]);
+
+  // Save settings whenever language or theme changes
+  useEffect(() => {
+    if (!settingsLoaded) return;
+
+    void saveAppSettings({
+      language,
+      theme,
+    }).catch((error) => {
+      console.error("Failed to save application settings:", error);
+    });
+  }, [language, theme, settingsLoaded]);
+
+  // Toggle between Russian and English
+  async function toggleLanguage() {
+    if (!settingsLoaded || languageChanging) return;
+
+    const nextLanguage: AppLanguage =
+      language === "ru" ? "en" : "ru";
+
+    setLanguageChanging(true);
+
+    try {
+      // Change i18next language first
+      await i18n.changeLanguage(nextLanguage);
+
+      // Update React state after successful language change
+      setLanguage(nextLanguage);
+    } catch (error) {
+      console.error("Failed to change application language:", error);
+    } finally {
+      setLanguageChanging(false);
+    }
   }
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <header className="row">
+        <h1>{t("app.name")}</h1>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+        <button
+          type="button"
+          onClick={toggleLanguage}
+          disabled={!settingsLoaded || languageChanging}
+        >
+          {languageChanging
+            ? "..."
+            : language === "ru"
+              ? "EN"
+              : "RU"}
+        </button>
+      </header>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      <p>{t("app.tagline")}</p>
+
+      <section>
+        <h2>{t("capture.title")}</h2>
+        <p>{t("capture.area")}</p>
+
+        <h2>{t("recording.title")}</h2>
+
+        <h2>{t("settings.title")}</h2>
+
+        <div className="row">
+          <label htmlFor="theme-select">
+            {t("settings.theme")}
+          </label>
+
+          <select
+            id="theme-select"
+            value={theme}
+            disabled={!settingsLoaded}
+            onChange={(event) =>
+              setTheme(event.currentTarget.value as AppTheme)
+            }
+          >
+            <option value="system">{t("settings.system")}</option>
+            <option value="dark">{t("settings.dark")}</option>
+            <option value="light">{t("settings.light")}</option>
+          </select>
+        </div>
+
+        <h2>{t("about.title")}</h2>
+
+        <p>{t("status.ready")}</p>
+      </section>
     </main>
   );
 }
