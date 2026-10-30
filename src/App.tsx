@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import i18n from "./i18n";
+
 import {
   loadAppSettings,
   saveAppSettings,
@@ -11,7 +13,8 @@ import {
 import "./App.css";
 
 function App() {
-  const { t, i18n } = useTranslation();
+  // Explicitly bind React to the application's i18next instance
+  const { t } = useTranslation(undefined, { i18n });
 
   // Application settings
   const [language, setLanguage] = useState<AppLanguage>("ru");
@@ -31,7 +34,6 @@ function App() {
 
         if (!isMounted) return;
 
-        // Apply saved language
         await i18n.changeLanguage(settings.language);
 
         if (!isMounted) return;
@@ -52,7 +54,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [i18n]);
+  }, []);
 
   // Apply selected theme
   useEffect(() => {
@@ -85,10 +87,7 @@ function App() {
     setLanguageChanging(true);
 
     try {
-      // Change i18next language first
       await i18n.changeLanguage(nextLanguage);
-
-      // Update React state after successful language change
       setLanguage(nextLanguage);
     } catch (error) {
       console.error("Failed to change application language:", error);

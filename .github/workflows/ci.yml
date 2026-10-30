@@ -1,0 +1,98 @@
+name: CrossShot CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+  pull_request:
+    branches:
+      - main
+      - dev
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ==========================================
+  # FRONTEND CHECKS
+  # ==========================================
+
+  frontend:
+    name: Frontend checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run frontend checks
+        run: npm run check
+
+      # Generate coverage only once on Ubuntu
+      - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run test:coverage
+
+      # Upload HTML, JSON and Clover reports
+      - name: Upload coverage report
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: crossshot-coverage
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ==========================================
+  # RUST BACKEND CHECKS
+  # ==========================================
+
+  rust-tests:
+    name: Rust checks (Windows MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+
+      - name: Run Rust checks
+        run: npm run check:rust
