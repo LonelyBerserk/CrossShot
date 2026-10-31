@@ -102,6 +102,8 @@ describe("CrossShot App", () => {
     mockLoadSettings.mockResolvedValue({
       language: "ru",
       theme: "system",
+      playSuccessSound: true,
+      showCaptureNotification: true,
     });
 
     mockSaveSettings.mockResolvedValue(undefined);
@@ -130,6 +132,8 @@ describe("CrossShot App", () => {
     mockLoadSettings.mockResolvedValue({
       language: "en",
       theme: "dark",
+      playSuccessSound: true,
+      showCaptureNotification: true,
     });
 
     await renderApp();
@@ -188,6 +192,8 @@ describe("CrossShot App", () => {
       expect(mockSaveSettings).toHaveBeenLastCalledWith({
         language: "en",
         theme: "system",
+        playSuccessSound: true,
+        showCaptureNotification: true,
       });
     });
   });

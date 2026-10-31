@@ -56,6 +56,8 @@ function App() {
   // Application settings
   const [language, setLanguage] = useState<AppLanguage>("ru");
   const [theme, setTheme] = useState<AppTheme>("system");
+  const [playSuccessSound, setPlaySuccessSound] = useState(true);
+  const [showCaptureNotification, setShowCaptureNotification] = useState(true);
 
   // Initialization and language switching
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -169,6 +171,8 @@ function App() {
 
         setLanguage(settings.language);
         setTheme(settings.theme);
+        setPlaySuccessSound(settings.playSuccessSound);
+        setShowCaptureNotification(settings.showCaptureNotification);
       } catch (error) {
         console.error("Failed to load application settings:", error);
       } finally {
@@ -316,10 +320,12 @@ function App() {
     void saveAppSettings({
       language,
       theme,
+      playSuccessSound,
+      showCaptureNotification,
     }).catch((error) => {
       console.error("Failed to save application settings:", error);
     });
-  }, [language, theme, settingsLoaded]);
+  }, [language, theme, playSuccessSound, showCaptureNotification, settingsLoaded]);
 
   // Toggle interface language
   async function toggleLanguage() {
@@ -549,6 +555,32 @@ function App() {
             <option value="dark">{t("settings.dark")}</option>
             <option value="light">{t("settings.light")}</option>
           </select>
+        </div>
+
+        <div className="row">
+          <label htmlFor="play-success-sound">
+            {t("settings.playSuccessSound")}
+          </label>
+          <input
+            className="setting-checkbox"
+            id="play-success-sound"
+            type="checkbox"
+            checked={playSuccessSound}
+            onChange={(event) => setPlaySuccessSound(event.currentTarget.checked)}
+          />
+        </div>
+
+        <div className="row">
+          <label htmlFor="show-capture-notification">
+            {t("settings.showCaptureNotification")}
+          </label>
+          <input
+            className="setting-checkbox"
+            id="show-capture-notification"
+            type="checkbox"
+            checked={showCaptureNotification}
+            onChange={(event) => setShowCaptureNotification(event.currentTarget.checked)}
+          />
         </div>
 
         <h2>{t("about.title")}</h2>

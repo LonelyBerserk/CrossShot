@@ -34,6 +34,25 @@
                                     "decorations":  false,
                                     "title":  "CrossShot Capture Overlay",
                                     "center":  false
+                                },
+                                {
+                                    "label":  "capture-toast",
+                                    "title":  "CrossShot Notification",
+                                    "url":  "index.html?window=capture-toast",
+                                    "width":  390,
+                                    "height":  140,
+                                    "visible":  false,
+                                    "create":  true,
+                                    "resizable":  false,
+                                    "alwaysOnTop":  true,
+                                    "skipTaskbar":  true,
+                                    "decorations":  false,
+                                    "transparent":  true,
+                                    "backgroundColor":  "#00000000",
+                                    "shadow":  false,
+                                    "focus":  false,
+                                    "focusable":  false,
+                                    "center":  false
                                 }
                             ],
                 "security":  {

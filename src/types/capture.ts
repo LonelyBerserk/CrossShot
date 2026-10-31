@@ -19,3 +19,14 @@ export interface CaptureRegion {
   width: number;
   height: number;
 }
+
+/**
+ * Result of capturing a region across multiple monitors.
+ */
+export interface RegionCaptureResult {
+  filePath: string;
+  width: number;
+  height: number;
+  clipboardCopied: boolean;
+  clipboardError: string | null;
+}

@@ -306,3 +306,15 @@ a:hover {
     animation-iteration-count: 1 !important;
   }
 }
+
+
+/* ---------- SETTINGS CHECKBOXES ---------- */
+
+input.setting-checkbox {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0 4px;
+  accent-color: var(--color-accent);
+  flex: 0 0 auto;
+}

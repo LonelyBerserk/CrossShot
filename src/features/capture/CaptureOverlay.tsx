@@ -10,6 +10,9 @@ import {
 import { useTranslation } from "react-i18next";
 
 import i18n from "../../i18n";
+import { captureVirtualDesktopRegion } from "../../services/capture";
+import { displayCaptureNotification } from "../../services/notifications";
+import { loadAppSettings } from "../../services/settings";
 import { closeCaptureOverlay } from "../../services/overlay";
 import { getMonitors } from "../../services/monitors";
 import type { MonitorInfo } from "../../types/monitor";
@@ -207,6 +210,7 @@ function CaptureOverlay() {
   const moveOriginRef = useRef<MoveOrigin | null>(null);
   const monitorsRef = useRef<MonitorInfo[]>([]);
   const [labelPosition, setLabelPosition] = useState<LabelPosition | null>(null);
+  const captureInProgressRef = useRef(false);
 
   const selection = useMemo<SelectionRect | null>(() => {
     if (!startPoint || !currentPoint) return null;
@@ -236,15 +240,118 @@ function CaptureOverlay() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        void closeCaptureOverlay().catch((error: unknown) => {
+          console.error("Failed to close capture overlay:", error);
+        });
+        return;
+      }
+
+      const isCopyShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c";
+      if (event.key !== "Enter" && !isCopyShortcut) return;
+
       event.preventDefault();
-      void closeCaptureOverlay().catch((error: unknown) => {
-        console.error("Failed to close capture overlay:", error);
-      });
+
+      if (captureInProgressRef.current || !selection || isSelecting || isMoving || resizeHandle) return;
+      if (selection.width < 1 || selection.height < 1) return;
+
+      captureInProgressRef.current = true;
+
+      void (async () => {
+        try {
+          const monitors = monitorsRef.current.length > 0 ? monitorsRef.current : await getMonitors();
+          monitorsRef.current = monitors;
+
+          if (monitors.length === 0) throw new Error("No monitors are available");
+
+          const bounds = overlayRef.current?.getBoundingClientRect();
+          if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
+            throw new Error("Overlay dimensions are unavailable");
+          }
+
+          const minX = Math.min(...monitors.map((monitor) => monitor.x));
+          const minY = Math.min(...monitors.map((monitor) => monitor.y));
+          const maxX = Math.max(...monitors.map((monitor) => monitor.x + monitor.width));
+          const maxY = Math.max(...monitors.map((monitor) => monitor.y + monitor.height));
+          const scaleX = (maxX - minX) / bounds.width;
+          const scaleY = (maxY - minY) / bounds.height;
+
+          if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+            throw new Error("Invalid virtual desktop scaling");
+          }
+
+          const left = Math.round(selection.left * scaleX);
+          const top = Math.round(selection.top * scaleY);
+          const right = Math.round((selection.left + selection.width) * scaleX);
+          const bottom = Math.round((selection.top + selection.height) * scaleY);
+          const physicalWidth = right - left;
+          const physicalHeight = bottom - top;
+
+          if (physicalWidth <= 0 || physicalHeight <= 0) {
+            throw new Error("Selected capture region is too small");
+          }
+
+          const result = await captureVirtualDesktopRegion(
+            minX + left,
+            minY + top,
+            physicalWidth,
+            physicalHeight,
+          );
+
+          const settings = await loadAppSettings().catch((settingsError: unknown) => {
+            console.error("Failed to load notification settings:", settingsError);
+            return { playSuccessSound: true, showCaptureNotification: true };
+          });
+
+          if (result.clipboardCopied) {
+            console.info("Screenshot saved and copied to clipboard:", result.filePath);
+            await displayCaptureNotification({
+              kind: "success",
+              filePath: result.filePath,
+              playSuccessSound: settings.playSuccessSound,
+              showSuccessNotification: settings.showCaptureNotification,
+            }).catch((notificationError: unknown) => {
+              console.error("Failed to display success notification:", notificationError);
+            });
+          } else {
+            console.error("Screenshot saved, but clipboard copy failed:", result.clipboardError, result.filePath);
+            await displayCaptureNotification({
+              kind: "error",
+              filePath: result.filePath,
+              errorCode: `CLIPBOARD_COPY_FAILED: ${result.clipboardError ?? "Unknown clipboard error"}`,
+              playSuccessSound: false,
+              showSuccessNotification: true,
+            }).catch((notificationError: unknown) => {
+              console.error("Failed to display clipboard error notification:", notificationError);
+            });
+          }
+
+          await closeCaptureOverlay().catch((closeError: unknown) => {
+            console.error("Failed to close capture overlay after notification:", closeError);
+          });
+        } catch (error) {
+          captureInProgressRef.current = false;
+          console.error("Failed to capture screenshot:", error);
+          const errorCode = `CAPTURE_FAILED: ${error instanceof Error ? error.message : String(error)}`;
+          await displayCaptureNotification({
+            kind: "error",
+            errorCode,
+            playSuccessSound: false,
+            showSuccessNotification: true,
+          }).catch((notificationError: unknown) => {
+            console.error("Failed to display capture error notification:", notificationError);
+          });
+          await closeCaptureOverlay().catch((closeError: unknown) => {
+            console.error("Failed to close overlay after capture error:", closeError);
+          });
+        }
+      })();
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [selection, isSelecting, isMoving, resizeHandle]);
 
   useLayoutEffect(() => {
     if (!selection || !startPoint || !currentPoint || !overlayRef.current || !dimensionsRef.current) {

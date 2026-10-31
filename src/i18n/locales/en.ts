@@ -64,6 +64,8 @@ export const en = {
     savePath: "Save location",
     format: "File format",
     quality: "Quality",
+    playSuccessSound: "Play a sound after a successful screenshot or video recording",
+    showCaptureNotification: "Show a notification after a screenshot",
   },
 
   about: {

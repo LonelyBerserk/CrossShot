@@ -64,6 +64,8 @@ export const ru = {
     savePath: "Папка сохранения",
     format: "Формат файла",
     quality: "Качество",
+    playSuccessSound: "Воспроизводить звук после успешного скриншота или записи видео",
+    showCaptureNotification: "Показывать уведомление после скриншота",
   },
 
   about: {

@@ -5,16 +5,17 @@ import "./i18n";
 
 import App from "./App";
 import CaptureOverlay from "./features/capture/CaptureOverlay";
+import CaptureToast from "./features/notifications/CaptureToast";
 
 // Detect which Tauri window is loading this frontend.
-const isCaptureOverlay =
-  new URLSearchParams(window.location.search).get("window") ===
-  "capture-overlay";
+const windowType = new URLSearchParams(window.location.search).get("window");
+const isCaptureOverlay = windowType === "capture-overlay";
+const isCaptureToast = windowType === "capture-toast";
 
 ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement,
 ).render(
   <React.StrictMode>
-    {isCaptureOverlay ? <CaptureOverlay /> : <App />}
+    {isCaptureOverlay ? <CaptureOverlay /> : isCaptureToast ? <CaptureToast /> : <App />}
   </React.StrictMode>
 );

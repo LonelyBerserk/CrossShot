@@ -55,6 +55,8 @@ describe("Application settings service", () => {
     mockStore.get.mockResolvedValue({
       language: "en",
       theme: "dark",
+      playSuccessSound: false,
+      showCaptureNotification: false,
     });
 
     const settings = await loadAppSettings();
@@ -62,6 +64,8 @@ describe("Application settings service", () => {
     expect(settings).toEqual({
       language: "en",
       theme: "dark",
+      playSuccessSound: false,
+      showCaptureNotification: false,
     });
   });
 
@@ -76,6 +80,8 @@ describe("Application settings service", () => {
     expect(settings).toEqual({
       language: "ru",
       theme: "system",
+      playSuccessSound: true,
+      showCaptureNotification: true,
     });
   });
 
@@ -83,6 +89,8 @@ describe("Application settings service", () => {
     const settings: AppSettings = {
       language: "en",
       theme: "dark",
+      playSuccessSound: true,
+      showCaptureNotification: false,
     };
 
     await saveAppSettings(settings);

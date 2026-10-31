@@ -10,12 +10,16 @@ export type AppTheme = "system" | "dark" | "light";
 export interface AppSettings {
   language: AppLanguage;
   theme: AppTheme;
+  playSuccessSound: boolean;
+  showCaptureNotification: boolean;
 }
 
 // Default application settings
 export const DEFAULT_SETTINGS: AppSettings = {
   language: "ru",
   theme: "system",
+  playSuccessSound: true,
+  showCaptureNotification: true,
 };
 
 // Store configuration
@@ -54,6 +58,14 @@ export async function loadAppSettings(): Promise<AppSettings> {
   return {
     language,
     theme,
+    playSuccessSound:
+      typeof savedSettings?.playSuccessSound === "boolean"
+        ? savedSettings.playSuccessSound
+        : DEFAULT_SETTINGS.playSuccessSound,
+    showCaptureNotification:
+      typeof savedSettings?.showCaptureNotification === "boolean"
+        ? savedSettings.showCaptureNotification
+        : DEFAULT_SETTINGS.showCaptureNotification,
   };
 }
 

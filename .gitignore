@@ -23,3 +23,7 @@ coverage/
 *.njsproj
 *.sln
 *.sw?
+
+# CrossShot temporary backups
+*.bak
+*.bak_*

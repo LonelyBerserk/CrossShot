@@ -9,3 +9,14 @@ pub struct CaptureResult {
     pub width: u32,
     pub height: u32,
 }
+
+/// Information about a captured virtual desktop region.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionCaptureResult {
+    pub file_path: String,
+    pub width: u32,
+    pub height: u32,
+    pub clipboard_copied: bool,
+    pub clipboard_error: Option<String>,
+}
