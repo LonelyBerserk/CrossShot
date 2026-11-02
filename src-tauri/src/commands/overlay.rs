@@ -1,10 +1,32 @@
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindowBuilder,
+};
 
 use crate::models::monitor::MonitorInfo;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+
+// Stores the PNG image and frontend readiness for capture sessions.
+#[derive(Default)]
+pub struct CaptureSessionState {
+    pub(crate) pending_png: Mutex<Option<Vec<u8>>>,
+    pub(crate) frontend_ready: Arc<AtomicBool>,
+}
+
+/// Called by the frontend after the capture overlay has subscribed to session events.
+#[tauri::command]
+pub fn mark_capture_overlay_frontend_ready(state: State<'_, CaptureSessionState>) {
+    state.frontend_ready.store(true, Ordering::Release);
+
+    eprintln!("[PERF][Rust] capture overlay frontend is READY: event listener registered");
+}
+use crate::services::capture::capture_full_virtual_desktop_png;
 use crate::services::monitor::list_monitors;
 
 #[cfg(windows)]
-fn disable_window_accent_blur(window: &tauri::WebviewWindow) {
+pub(crate) fn disable_window_accent_blur(window: &tauri::WebviewWindow) {
     use std::{ffi::c_void, mem::size_of};
 
     #[repr(C)]
@@ -97,6 +119,73 @@ fn disable_window_accent_blur(window: &tauri::WebviewWindow) {
         eprintln!(
             "CrossShot: Failed to restore DWM frame: 0x{:08X}",
             frame_result as u32
+        );
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn configure_tray_menu_native_frame(window: &tauri::WebviewWindow) {
+    use std::{ffi::c_void, mem::size_of};
+
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmSetWindowAttribute(
+            hwnd: *mut c_void,
+            attribute: u32,
+            value: *const c_void,
+            value_size: u32,
+        ) -> i32;
+    }
+
+    let hwnd = match window.hwnd() {
+        Ok(hwnd) => hwnd.0,
+        Err(error) => {
+            eprintln!("CrossShot: Failed to obtain tray menu HWND: {error}");
+            return;
+        }
+    };
+
+    if hwnd.is_null() {
+        eprintln!("CrossShot: Tray menu HWND is null");
+        return;
+    }
+
+    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+    const DWMWCP_DONOTROUND: u32 = 1;
+    const DWMWA_BORDER_COLOR: u32 = 34;
+    const DWMWA_COLOR_NONE: u32 = 0xFFFFFFFE;
+
+    let corner_preference = DWMWCP_DONOTROUND;
+    let corner_result = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            (&corner_preference as *const u32).cast(),
+            size_of::<u32>() as u32,
+        )
+    };
+
+    let border_color = DWMWA_COLOR_NONE;
+    let border_result = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            (&border_color as *const u32).cast(),
+            size_of::<u32>() as u32,
+        )
+    };
+
+    if corner_result < 0 {
+        eprintln!(
+            "CrossShot: Failed to disable native tray menu corner rounding: 0x{:08X}",
+            corner_result as u32
+        );
+    }
+
+    if border_result < 0 {
+        eprintln!(
+            "CrossShot: Failed to disable native tray menu border: 0x{:08X}",
+            border_result as u32
         );
     }
 }
@@ -215,19 +304,113 @@ fn virtual_desktop_bounds(
     ))
 }
 
+/// Creates the capture overlay WebView during application startup.
+pub(crate) fn preload_capture_overlay(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    if app.get_webview_window("capture-overlay").is_some() {
+        eprintln!("[PERF][Rust] capture overlay WebView already exists at startup");
+        return Ok(());
+    }
+
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "capture-overlay")
+        .cloned()
+        .ok_or_else(|| {
+            std::io::Error::other("capture-overlay window configuration was not found")
+        })?;
+
+    let perf_started_at = std::time::Instant::now();
+
+    let overlay = WebviewWindowBuilder::from_config(app, &config)?
+        .focusable(false)
+        .build()?;
+
+    eprintln!(
+        "[PERF][Rust] capture overlay WebView created during startup: {} ms",
+        perf_started_at.elapsed().as_millis()
+    );
+
+    // Configure native Windows styles while the window is still hidden.
+    #[cfg(windows)]
+    {
+        if let Err(error) = configure_overlay_for_occlusion(&overlay) {
+            eprintln!("CrossShot: Failed to configure preloaded overlay native styles: {error}");
+        }
+
+        disable_window_accent_blur(&overlay);
+    }
+
+    eprintln!("[PERF][Rust] capture overlay WebView preloading completed");
+
+    Ok(())
+}
+
 /// Opens one continuous selection overlay across the entire virtual desktop.
 #[tauri::command]
-pub async fn open_capture_overlay(app: AppHandle, monitor_id: u32) -> Result<(), String> {
+pub async fn open_capture_overlay(
+    app: AppHandle,
+    monitor_id: u32,
+    state: State<'_, CaptureSessionState>,
+) -> Result<(), String> {
+    let perf_total_started_at = std::time::Instant::now();
+
+    eprintln!("[PERF][Rust] open_capture_overlay started");
+
+    // Capture the desktop before creating or showing the overlay.
+    let perf_capture_started_at = std::time::Instant::now();
+
+    let png_bytes = tauri::async_runtime::spawn_blocking(capture_full_virtual_desktop_png)
+        .await
+        .map_err(|error| format!("Screenshot capture task failed: {error}"))??;
+
+    eprintln!(
+        "[PERF][Rust] desktop capture + composition + PNG: {} ms; bytes={}",
+        perf_capture_started_at.elapsed().as_millis(),
+        png_bytes.len()
+    );
+
     let _ = monitor_id;
+
+    let perf_monitors_started_at = std::time::Instant::now();
+
     let monitors = tauri::async_runtime::spawn_blocking(list_monitors)
         .await
         .map_err(|error| format!("Monitor discovery task failed: {error}"))??;
 
+    eprintln!(
+        "[PERF][Rust] second monitor enumeration: {} ms; monitors={}",
+        perf_monitors_started_at.elapsed().as_millis(),
+        monitors.len()
+    );
+
     let (position, size) = virtual_desktop_bounds(&monitors)?;
 
+    let perf_store_started_at = std::time::Instant::now();
+
+    {
+        let mut pending_png = state
+            .pending_png
+            .lock()
+            .map_err(|_| "Capture session storage is unavailable".to_string())?;
+
+        *pending_png = Some(png_bytes);
+    }
+
+    eprintln!(
+        "[PERF][Rust] storing PNG in session state: {} ms",
+        perf_store_started_at.elapsed().as_millis()
+    );
+
     let overlay = if let Some(window) = app.get_webview_window("capture-overlay") {
+        eprintln!("[PERF][Rust] overlay window already exists; reusing it");
         window
     } else {
+        eprintln!("[PERF][Rust] overlay window does not exist; creating WebView");
+
+        let perf_webview_build_started_at = std::time::Instant::now();
         let config = app
             .config()
             .app
@@ -237,12 +420,21 @@ pub async fn open_capture_overlay(app: AppHandle, monitor_id: u32) -> Result<(),
             .cloned()
             .ok_or_else(|| "capture-overlay window configuration was not found".to_string())?;
 
-        WebviewWindowBuilder::from_config(&app, &config)
+        let window = WebviewWindowBuilder::from_config(&app, &config)
             .map_err(|error| format!("Failed to configure overlay window: {error}"))?
             .focusable(false)
             .build()
-            .map_err(|error| format!("Failed to create capture overlay: {error}"))?
+            .map_err(|error| format!("Failed to create capture overlay: {error}"))?;
+
+        eprintln!(
+            "[PERF][Rust] WebView creation: {} ms",
+            perf_webview_build_started_at.elapsed().as_millis()
+        );
+
+        window
     };
+
+    let perf_window_setup_started_at = std::time::Instant::now();
 
     overlay
         .set_focusable(true)
@@ -260,26 +452,75 @@ pub async fn open_capture_overlay(app: AppHandle, monitor_id: u32) -> Result<(),
         .show()
         .map_err(|error| format!("Failed to show overlay: {error}"))?;
 
+    eprintln!(
+        "[PERF][Rust] window configuration + show: {} ms",
+        perf_window_setup_started_at.elapsed().as_millis()
+    );
+
     #[cfg(windows)]
     configure_overlay_for_occlusion(&overlay)?;
 
     #[cfg(windows)]
     disable_window_accent_blur(&overlay);
 
+    let perf_focus_started_at = std::time::Instant::now();
+
     overlay
         .set_focus()
         .map_err(|error| format!("Failed to focus overlay: {error}"))?;
 
+    eprintln!(
+        "[PERF][Rust] native overlay configuration + focus: {} ms",
+        perf_focus_started_at.elapsed().as_millis()
+    );
+
+    // Wait for the React event listener during the first lazy WebView creation.
+    let frontend_ready = Arc::clone(&state.frontend_ready);
+    let perf_ready_wait_started_at = std::time::Instant::now();
+
+    let frontend_ready_confirmed = tauri::async_runtime::spawn_blocking(move || {
+        let wait_started_at = std::time::Instant::now();
+
+        while !frontend_ready.load(Ordering::Acquire)
+            && wait_started_at.elapsed() < std::time::Duration::from_secs(10)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        frontend_ready.load(Ordering::Acquire)
+    })
+    .await
+    .map_err(|error| format!("Capture overlay readiness task failed: {error}"))?;
+
+    if !frontend_ready_confirmed {
+        return Err("Capture overlay frontend did not become ready within 10 seconds".to_string());
+    }
+
+    eprintln!(
+        "[PERF][Rust] frontend readiness wait: {} ms",
+        perf_ready_wait_started_at.elapsed().as_millis()
+    );
+
+    app.emit_to("capture-overlay", "capture-session-ready", ())
+        .map_err(|error| format!("Failed to notify capture overlay: {error}"))?;
+
+    eprintln!("[PERF][Rust] capture-session-ready event emitted");
+
+    eprintln!(
+        "[PERF][Rust] open_capture_overlay total: {} ms",
+        perf_total_started_at.elapsed().as_millis()
+    );
+
     Ok(())
 }
 
-/// Closes the selection overlay without closing the main application window.
+/// Hides the selection overlay while keeping its WebView alive for reuse.
 #[tauri::command]
 pub async fn close_capture_overlay(app: AppHandle) -> Result<(), String> {
     if let Some(overlay) = app.get_webview_window("capture-overlay") {
         overlay
-            .close()
-            .map_err(|error| format!("Failed to close capture overlay: {error}"))?;
+            .hide()
+            .map_err(|error| format!("Failed to hide capture overlay: {error}"))?;
     }
 
     Ok(())

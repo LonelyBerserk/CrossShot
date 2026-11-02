@@ -11,12 +11,15 @@ import {
 } from "./services/settings";
 
 import { getMonitors } from "./services/monitors";
-import { captureMonitor } from "./services/capture";
+import { captureFullVirtualDesktop, captureMonitor } from "./services/capture";
 import { openCaptureOverlay } from "./services/overlay";
+import { displayCaptureNotification } from "./services/notifications";
 
 import type { MonitorInfo } from "./types/monitor";
-import type { CaptureResult } from "./types/capture";
+import type { CaptureResult, RegionCaptureResult } from "./types/capture";
 
+import WindowTitleBar from "./components/WindowTitleBar";
+import OverlayScrollbar from "./components/OverlayScrollbar";
 import "./App.css";
 
 const MONITOR_POLL_INTERVAL_MS = 3000;
@@ -73,6 +76,11 @@ function App() {
   const [captureLoading, setCaptureLoading] = useState(false);
   const [captureResult, setCaptureResult] = useState<CaptureResult | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [captureNotificationError, setCaptureNotificationError] = useState<string | null>(null);
+
+  const [fullDesktopLoading, setFullDesktopLoading] = useState(false);
+  const [fullDesktopResult, setFullDesktopResult] = useState<RegionCaptureResult | null>(null);
+  const [fullDesktopError, setFullDesktopError] = useState<string | null>(null);
   const [overlayLoading, setOverlayLoading] = useState(false);
   const [overlayError, setOverlayError] = useState<string | null>(null);
 
@@ -262,8 +270,38 @@ function App() {
       }
     };
   }, [applyDetectedMonitors]);
+  // Deliver the same notification feedback for every screenshot mode.
+  async function notifyCapture(
+    kind: "success" | "error",
+    filePath?: string,
+    errorCode?: string,
+  ): Promise<void> {
+    const settings = await loadAppSettings().catch((settingsError: unknown) => {
+      console.error("Failed to load notification settings:", settingsError);
+      return { playSuccessSound: true, showCaptureNotification: true };
+    });
 
-  // Capture selected monitor
+    try {
+      await displayCaptureNotification({
+        kind,
+        ...(filePath ? { filePath } : {}),
+        ...(errorCode ? { errorCode } : {}),
+        playSuccessSound: kind === "success" && settings.playSuccessSound,
+        showSuccessNotification:
+          kind === "error" || settings.showCaptureNotification,
+      });
+      setCaptureNotificationError(null);
+    } catch (notificationError) {
+      const message =
+        notificationError instanceof Error
+          ? notificationError.message
+          : String(notificationError);
+      console.error("Failed to display capture notification:", notificationError);
+      setCaptureNotificationError(message);
+    }
+  }
+
+  // Capture selected monitor.
   async function handleCapture() {
     if (selectedMonitorId === null || captureLoading) {
       return;
@@ -271,19 +309,63 @@ function App() {
 
     setCaptureLoading(true);
     setCaptureError(null);
+    setCaptureNotificationError(null);
     setCaptureResult(null);
 
     try {
       const result = await captureMonitor(selectedMonitorId);
       setCaptureResult(result);
+      await notifyCapture("success", result.filePath);
     } catch (error) {
       console.error("Failed to capture screenshot:", error);
-
-      setCaptureError(
-        error instanceof Error ? error.message : String(error),
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      setCaptureError(message);
+      await notifyCapture("error", undefined, `CAPTURE_FAILED: ${message}`);
     } finally {
       setCaptureLoading(false);
+    }
+  }
+
+  // Capture the complete virtual desktop without manual selection.
+  async function handleCaptureFullDesktop() {
+    if (
+      monitors.length === 0 ||
+      fullDesktopLoading ||
+      captureLoading ||
+      overlayLoading
+    ) {
+      return;
+    }
+
+    setFullDesktopLoading(true);
+    setFullDesktopError(null);
+    setCaptureNotificationError(null);
+    setFullDesktopResult(null);
+
+    try {
+      const result = await captureFullVirtualDesktop();
+      setFullDesktopResult(result);
+
+      if (result.clipboardCopied) {
+        await notifyCapture("success", result.filePath);
+      } else {
+        await notifyCapture(
+          "error",
+          result.filePath,
+          `CLIPBOARD_COPY_FAILED: ${result.clipboardError ?? "Unknown clipboard error"}`,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to capture full virtual desktop:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      setFullDesktopError(message);
+      await notifyCapture(
+        "error",
+        undefined,
+        `CAPTURE_FAILED: ${message}`,
+      );
+    } finally {
+      setFullDesktopLoading(false);
     }
   }
 
@@ -347,22 +429,13 @@ function App() {
   }
 
   return (
-    <main className="container">
-      <header className="row">
-        <h1>{t("app.name")}</h1>
-
-        <button
-          type="button"
-          onClick={toggleLanguage}
-          disabled={!settingsLoaded || languageChanging}
-        >
-          {languageChanging
-            ? "..."
-            : language === "ru"
-              ? "EN"
-              : "RU"}
+    <div className="app-window">
+      <WindowTitleBar language={language}>
+        <button type="button" onClick={toggleLanguage} disabled={!settingsLoaded || languageChanging}>
+          {languageChanging ? "..." : language === "ru" ? "EN" : "RU"}
         </button>
-      </header>
+      </WindowTitleBar>
+      <main id="app-content" className="container app-content">
 
       <p>{t("app.tagline")}</p>
 
@@ -506,6 +579,42 @@ function App() {
               : monitorLabels.capture}
           </button>
 
+          <button
+            type="button"
+            onClick={() => void handleCaptureFullDesktop()}
+            disabled={
+              monitorsLoading ||
+              monitors.length === 0 ||
+              fullDesktopLoading ||
+              captureLoading ||
+              overlayLoading
+            }
+          >
+            {fullDesktopLoading
+              ? monitorLabels.capturing
+              : t("capture.fullScreen")}
+          </button>
+
+          {fullDesktopError && (
+            <p role="alert">
+              {monitorLabels.captureError}: {fullDesktopError}
+            </p>
+          )}
+
+          {fullDesktopResult && (
+            <div role="status" aria-live="polite">
+              <p>{monitorLabels.captured}</p>
+              <p>
+                {fullDesktopResult.width} {"\u00D7"} {fullDesktopResult.height} px
+              </p>
+              <p>
+                {monitorLabels.capturePath}: {fullDesktopResult.filePath}
+              </p>
+              {!fullDesktopResult.clipboardCopied && (
+                <p>{fullDesktopResult.clipboardError}</p>
+              )}
+            </div>
+          )}
           {overlayError && (
             <p role="alert">
               {monitorLabels.overlayError}: {overlayError}
@@ -515,6 +624,15 @@ function App() {
           {captureError && (
             <p role="alert">
               {monitorLabels.captureError}: {captureError}
+            </p>
+          )}
+
+          {captureNotificationError && (
+            <p role="alert">
+              {language === "ru"
+                ? "Не удалось показать уведомление"
+                : "Failed to display notification"}
+              : {captureNotificationError}
             </p>
           )}
 
@@ -588,6 +706,8 @@ function App() {
         <p>{t("status.ready")}</p>
       </section>
     </main>
+    <OverlayScrollbar targetId="app-content" />
+    </div>
   );
 }
 

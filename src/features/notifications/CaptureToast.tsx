@@ -49,6 +49,7 @@ function CaptureToast() {
   const [isHovered, setIsHovered] = useState(false);
   const dismissTimerRef = useRef<number | null>(null);
   const exitTimerRef = useRef<number | null>(null);
+  const pointerInsideRef = useRef(false);
 
   const clearTimers = useCallback(() => {
     if (dismissTimerRef.current !== null) {
@@ -59,6 +60,7 @@ function CaptureToast() {
       window.clearTimeout(exitTimerRef.current);
       exitTimerRef.current = null;
     }
+
   }, []);
 
   const hideNotification = useCallback(() => {
@@ -66,6 +68,8 @@ function CaptureToast() {
       window.clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = null;
     }
+
+
     setIsExiting(true);
     exitTimerRef.current = window.setTimeout(() => {
       setIsVisible(false);
@@ -92,6 +96,7 @@ function CaptureToast() {
       if (!mounted) return;
 
       clearTimers();
+      pointerInsideRef.current = false;
       setIsHovered(false);
 
       if (nextPayload.kind === "success" && nextPayload.playSuccessSound) {
@@ -129,21 +134,34 @@ function CaptureToast() {
   }, [clearTimers, scheduleDismiss]);
 
   const handleMouseEnter = () => {
-    setIsHovered(true);
+    pointerInsideRef.current = true;
+
+
+
     if (dismissTimerRef.current !== null) {
       window.clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = null;
     }
+
     if (exitTimerRef.current !== null) {
       window.clearTimeout(exitTimerRef.current);
       exitTimerRef.current = null;
       setIsExiting(false);
     }
+
+    // Start the visual expansion before resizing the native window.
+    setIsHovered(true);
+
+
   };
 
   const handleMouseLeave = () => {
+    pointerInsideRef.current = false;
     setIsHovered(false);
-    if (payload && isVisible) scheduleDismiss();
+
+    if (payload && isVisible) {
+      scheduleDismiss();
+    }
   };
 
   const handleClick = () => {
@@ -155,7 +173,6 @@ function CaptureToast() {
         console.error("Failed to open screenshot location:", error);
       });
   };
-
   const isError = payload?.kind === "error";
 
   return (

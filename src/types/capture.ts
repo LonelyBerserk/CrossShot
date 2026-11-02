@@ -1,4 +1,12 @@
 /**
+ * Decoded screenshot image available to the frontend editor.
+ */
+export interface CapturedImage {
+  url: string;
+  width: number;
+  height: number;
+}
+/**
  * Information about a successfully saved screenshot.
  */
 export interface CaptureResult {

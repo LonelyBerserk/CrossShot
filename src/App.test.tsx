@@ -25,11 +25,24 @@ import {
 } from "./services/settings";
 
 import { getMonitors } from "./services/monitors";
-import { captureMonitor } from "./services/capture";
+import { captureFullVirtualDesktop, captureMonitor } from "./services/capture";
 import { openCaptureOverlay } from "./services/overlay";
+import { displayCaptureNotification } from "./services/notifications";
 
 import type { MonitorInfo } from "./types/monitor";
 
+const { mockCurrentWindow } = vi.hoisted(() => ({
+  mockCurrentWindow: {
+    isMaximized: vi.fn(),
+    onResized: vi.fn(),
+    hide: vi.fn(),
+    toggleMaximize: vi.fn(),
+  },
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => mockCurrentWindow,
+}));
 vi.mock("./services/settings", () => ({
   loadAppSettings: vi.fn(),
   saveAppSettings: vi.fn().mockResolvedValue(undefined),
@@ -41,6 +54,11 @@ vi.mock("./services/monitors", () => ({
 
 vi.mock("./services/capture", () => ({
   captureMonitor: vi.fn(),
+  captureFullVirtualDesktop: vi.fn(),
+}));
+
+vi.mock("./services/notifications", () => ({
+  displayCaptureNotification: vi.fn(),
 }));
 
 vi.mock("./services/overlay", () => ({
@@ -51,6 +69,8 @@ const mockLoadSettings = vi.mocked(loadAppSettings);
 const mockSaveSettings = vi.mocked(saveAppSettings);
 const mockGetMonitors = vi.mocked(getMonitors);
 const mockCaptureMonitor = vi.mocked(captureMonitor);
+const mockCaptureFullDesktop = vi.mocked(captureFullVirtualDesktop);
+const mockDisplayCaptureNotification = vi.mocked(displayCaptureNotification);
 const mockOpenCaptureOverlay = vi.mocked(openCaptureOverlay);
 
 const mockMonitors: MonitorInfo[] = [
@@ -98,6 +118,10 @@ async function renderApp() {
 describe("CrossShot App", () => {
   beforeEach(async () => {
     vi.resetAllMocks();
+    mockCurrentWindow.isMaximized.mockResolvedValue(false);
+    mockCurrentWindow.onResized.mockResolvedValue(() => {});
+    mockCurrentWindow.hide.mockResolvedValue(undefined);
+    mockCurrentWindow.toggleMaximize.mockResolvedValue(undefined);
 
     mockLoadSettings.mockResolvedValue({
       language: "ru",
@@ -109,6 +133,15 @@ describe("CrossShot App", () => {
     mockSaveSettings.mockResolvedValue(undefined);
     mockGetMonitors.mockResolvedValue(mockMonitors);
     mockOpenCaptureOverlay.mockResolvedValue(undefined);
+
+    mockCaptureFullDesktop.mockResolvedValue({
+      filePath: "C:\\Users\\berserk\\Pictures\\CrossShot\\crossshot_full_test.png",
+      width: 3840,
+      height: 2160,
+      clipboardCopied: true,
+      clipboardError: null,
+    });
+    mockDisplayCaptureNotification.mockResolvedValue(undefined);
 
     mockCaptureMonitor.mockResolvedValue({
       filePath: "C:\\Users\\berserk\\Pictures\\CrossShot\\crossshot_test.png",
@@ -268,6 +301,44 @@ describe("CrossShot App", () => {
     expect(
       screen.getByText(/crossshot_test\.png/),
     ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockDisplayCaptureNotification).toHaveBeenCalledWith({
+        kind: "success",
+        filePath: "C:\\Users\\berserk\\Pictures\\CrossShot\\crossshot_test.png",
+        playSuccessSound: true,
+        showSuccessNotification: true,
+      });
+    });
+  });
+
+  it("captures the complete virtual desktop and sends a success notification", async () => {
+    const user = userEvent.setup();
+
+    await renderApp();
+
+    const fullDesktopButton = await screen.findByRole("button", {
+      name: i18n.t("capture.fullScreen"),
+    });
+
+    await user.click(fullDesktopButton);
+
+    await waitFor(() => {
+      expect(mockCaptureFullDesktop).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await screen.findByText("3840 \u00D7 2160 px")).toBeInTheDocument();
+    expect(screen.getByText(/crossshot_full_test\.png/)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(mockDisplayCaptureNotification).toHaveBeenCalledWith({
+        kind: "success",
+        filePath: "C:\\Users\\berserk\\Pictures\\CrossShot\\crossshot_full_test.png",
+        playSuccessSound: true,
+        showSuccessNotification: true,
+      });
+    });
+
+    expect(mockOpenCaptureOverlay).not.toHaveBeenCalled();
   });
 
   it("opens the selection overlay on the selected monitor", async () => {

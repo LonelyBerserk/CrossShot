@@ -27,3 +27,5 @@ coverage/
 # CrossShot temporary backups
 *.bak
 *.bak_*
+# Generated local backup files
+*-backup

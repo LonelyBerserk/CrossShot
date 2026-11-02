@@ -13,6 +13,7 @@
                 "windows":  [
                                 {
                                     "title":  "crossshot",
+                                    "decorations": false,
                                     "width":  800,
                                     "height":  600
                                 },
@@ -39,8 +40,8 @@
                                     "label":  "capture-toast",
                                     "title":  "CrossShot Notification",
                                     "url":  "index.html?window=capture-toast",
-                                    "width":  390,
-                                    "height":  140,
+                                    "width":  68,
+                                    "height":  68,
                                     "visible":  false,
                                     "create":  true,
                                     "resizable":  false,
@@ -53,6 +54,26 @@
                                     "focus":  false,
                                     "focusable":  false,
                                     "center":  false
+                                }
+                            ,
+                                {
+                                    "label": "tray-menu",
+                                    "title": "CrossShot",
+                                    "url": "index.html?window=tray-menu",
+                                    "width": 160,
+                                    "height": 80,
+                                    "visible": false,
+                                    "create": false,
+                                    "resizable": false,
+                                    "alwaysOnTop": true,
+                                    "skipTaskbar": true,
+                                    "decorations": false,
+                                    "transparent": true,
+                                    "backgroundColor": "#00000000",
+                                    "shadow": false,
+                                    "focus": true,
+                                    "focusable": true,
+                                    "center": false
                                 }
                             ],
                 "security":  {

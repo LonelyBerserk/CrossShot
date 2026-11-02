@@ -1,0 +1,124 @@
+/* ---------- CUSTOM WINDOW TITLE BAR ---------- */
+
+.window-titlebar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 44px;
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.window-titlebar-drag-region {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  gap: 9px;
+  padding: 0 16px;
+  cursor: default;
+}
+
+.window-titlebar-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--color-accent);
+  flex: 0 0 auto;
+}
+
+.window-titlebar-brand-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.window-titlebar-brand-name {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.15px;
+  line-height: 1;
+}
+
+.window-titlebar-actions {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  height: 100%;
+}
+
+.window-titlebar-extra {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+}
+
+.window-titlebar-extra button {
+  min-width: 40px;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.window-titlebar-extra button:hover {
+  background: var(--color-surface-hover);
+  border: 0;
+}
+
+.window-titlebar .window-control-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 43px;
+  min-width: 46px;
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.window-titlebar .window-control-button:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+  border: 0;
+}
+
+.window-titlebar .window-control-button:active {
+  transform: none;
+}
+
+.window-titlebar .window-control-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -3px;
+}
+
+.window-titlebar .window-control-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.window-titlebar .window-control-close:hover {
+  color: #ffffff;
+  background: #e81123;
+}

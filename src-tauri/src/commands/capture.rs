@@ -4,7 +4,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::models::capture::{CaptureResult, RegionCaptureResult};
 use crate::services::capture::{
-    capture_and_copy_virtual_desktop_region, capture_monitor as capture_monitor_service,
+    capture_and_copy_full_virtual_desktop, capture_and_copy_virtual_desktop_region,
+    capture_monitor as capture_monitor_service,
     capture_monitor_region as capture_monitor_region_service,
 };
 
@@ -86,4 +87,62 @@ pub async fn capture_virtual_desktop_region(
             Err(error)
         }
     }
+}
+
+// Returns the PNG prepared by open_capture_overlay through binary IPC.
+#[tauri::command]
+pub fn capture_full_virtual_desktop_png(
+    state: tauri::State<'_, crate::commands::overlay::CaptureSessionState>,
+) -> Result<tauri::ipc::Response, String> {
+    let perf_command_started_at = std::time::Instant::now();
+
+    let png_bytes = {
+        let mut pending_png = state
+            .pending_png
+            .lock()
+            .map_err(|_| "Capture session storage is unavailable".to_string())?;
+
+        pending_png
+            .take()
+            .ok_or_else(|| "No screenshot is waiting for this capture session".to_string())?
+    };
+
+    eprintln!(
+        "[PERF][Rust] PNG IPC command prepared: {} ms; bytes={}",
+        perf_command_started_at.elapsed().as_millis(),
+        png_bytes.len()
+    );
+
+    Ok(tauri::ipc::Response::new(png_bytes))
+}
+/// Captures the complete virtual desktop without opening the selection overlay.
+#[tauri::command]
+pub async fn capture_full_virtual_desktop(app: AppHandle) -> Result<RegionCaptureResult, String> {
+    let output_dir: PathBuf = app
+        .path()
+        .picture_dir()
+        .map_err(|error| format!("Failed to resolve Pictures directory: {error}"))?
+        .join("CrossShot");
+
+    let main_window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main application window is not available".to_string())?;
+
+    main_window
+        .hide()
+        .map_err(|error| format!("Failed to hide main window: {error}"))?;
+
+    let capture_result = tauri::async_runtime::spawn_blocking(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        capture_and_copy_full_virtual_desktop(&output_dir)
+    })
+    .await
+    .map_err(|error| format!("Screenshot capture task failed: {error}"))
+    .and_then(|result| result);
+
+    if let Err(error) = main_window.show().and_then(|_| main_window.set_focus()) {
+        eprintln!("CrossShot: Failed to restore main window after capture: {error}");
+    }
+
+    capture_result
 }

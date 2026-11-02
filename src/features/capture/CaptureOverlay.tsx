@@ -10,11 +10,16 @@ import {
 import { useTranslation } from "react-i18next";
 
 import i18n from "../../i18n";
-import { captureVirtualDesktopRegion } from "../../services/capture";
+import { captureFullVirtualDesktopImage, captureVirtualDesktopRegion } from "../../services/capture";
 import { displayCaptureNotification } from "../../services/notifications";
 import { loadAppSettings } from "../../services/settings";
-import { closeCaptureOverlay } from "../../services/overlay";
+import {
+  closeCaptureOverlay,
+  listenForCaptureSessionReady,
+  markCaptureOverlayFrontendReady,
+} from "../../services/overlay";
 import { getMonitors } from "../../services/monitors";
+import type { CapturedImage } from "../../types/capture";
 import type { MonitorInfo } from "../../types/monitor";
 
 import "./CaptureOverlay.css";
@@ -212,6 +217,10 @@ function CaptureOverlay() {
   const [labelPosition, setLabelPosition] = useState<LabelPosition | null>(null);
   const captureInProgressRef = useRef(false);
 
+  const capturedImageRef = useRef<CapturedImage | null>(null);
+  const [capturedImage, setCapturedImage] = useState<CapturedImage | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+
   const selection = useMemo<SelectionRect | null>(() => {
     if (!startPoint || !currentPoint) return null;
     return {
@@ -237,6 +246,113 @@ function CaptureOverlay() {
       isMounted = false;
     };
   }, []);
+
+  // Each Rust session event requests a fresh screenshot image.
+  useEffect(() => {
+    let isMounted = true;
+    let unlisten: (() => void) | undefined;
+    let sessionGeneration = 0;
+
+    const handleCaptureSessionReady = () => {
+      const currentGeneration = ++sessionGeneration;
+      const imageStartedAt = performance.now();
+
+      console.info("[PERF][Frontend] capture-session-ready event received");
+
+      // Release the previous preview before loading the next session.
+      const previousImage = capturedImageRef.current;
+      capturedImageRef.current = null;
+
+      if (previousImage) {
+        URL.revokeObjectURL(previousImage.url);
+      }
+
+      // Reset all selection state for the new capture session.
+      setCapturedImage(null);
+      setCaptureError(null);
+      setStartPoint(null);
+      setCurrentPoint(null);
+      setIsSelecting(false);
+      setIsMoving(false);
+      setResizeHandle(null);
+      setLabelPosition(null);
+
+      captureInProgressRef.current = false;
+      moveOriginRef.current = null;
+      resizeOriginRef.current = null;
+
+      void captureFullVirtualDesktopImage()
+        .then((image) => {
+          if (!isMounted || currentGeneration !== sessionGeneration) {
+            URL.revokeObjectURL(image.url);
+            return;
+          }
+
+          capturedImageRef.current = image;
+          setCapturedImage(image);
+
+          console.info("[PERF][Frontend] capture session image ready", {
+            totalMs: Number((performance.now() - imageStartedAt).toFixed(1)),
+            width: image.width,
+            height: image.height,
+          });
+        })
+        .catch((error: unknown) => {
+          if (!isMounted || currentGeneration !== sessionGeneration) return;
+
+          const message = error instanceof Error ? error.message : String(error);
+          setCaptureError(message);
+
+          console.error("Failed to load capture session image:", error);
+        });
+    };
+
+    void (async () => {
+      const stopListening = await listenForCaptureSessionReady(
+        handleCaptureSessionReady,
+      );
+
+      if (!isMounted) {
+        stopListening();
+        return;
+      }
+
+      unlisten = stopListening;
+
+      await markCaptureOverlayFrontendReady();
+
+      console.info("[PERF][Frontend] capture overlay frontend is ready");
+    })().catch((error: unknown) => {
+      console.error(
+        "Failed to initialize capture overlay event listener:",
+        error,
+      );
+    });
+
+    return () => {
+      isMounted = false;
+      sessionGeneration += 1;
+      unlisten?.();
+
+      const currentImage = capturedImageRef.current;
+      capturedImageRef.current = null;
+
+      if (currentImage) {
+        URL.revokeObjectURL(currentImage.url);
+      }
+    };
+  }, []);
+
+
+
+  useLayoutEffect(() => {
+    if (!capturedImage) return;
+
+    console.info("[PERF][Frontend] screenshot committed to DOM", {
+      width: capturedImage.width,
+      height: capturedImage.height,
+    });
+  }, [capturedImage]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -374,7 +490,7 @@ function CaptureOverlay() {
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
+    if (!capturedImage || event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = getPoint(event);
@@ -419,6 +535,8 @@ function CaptureOverlay() {
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!capturedImage) return;
+
     const point = getPoint(event);
     const bounds = event.currentTarget.getBoundingClientRect();
 
@@ -481,6 +599,8 @@ function CaptureOverlay() {
   };
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!capturedImage) return;
+
     if (resizeHandle) {
       setResizeHandle(null);
       resizeOriginRef.current = null;
@@ -513,18 +633,33 @@ function CaptureOverlay() {
   return (
     <main
       ref={overlayRef}
-      className={`capture-overlay${selection ? " capture-overlay--has-selection" : ""}${isMoving ? " capture-overlay--moving" : ""}${resizeHandle ? " capture-overlay--resizing" : ""}`}
+      className={`capture-overlay${selection ? " capture-overlay--has-selection" : ""}${isMoving ? " capture-overlay--moving" : ""}${resizeHandle ? " capture-overlay--resizing" : ""}${!capturedImage ? " capture-overlay--loading" : ""}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onContextMenu={handleContextMenu}
     >
+      {capturedImage && (
+        <img
+          className="capture-overlay__screenshot"
+          src={capturedImage.url}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
+      )}
       {!selection && (
         <section className="capture-overlay__hint">
           <span className="capture-overlay__brand">CrossShot</span>
           <h1>{t("capture.area")}</h1>
-          <p>Drag to select an area. Press Esc or right-click to cancel.</p>
+          <p>
+  {captureError
+    ? `Screenshot unavailable: ${captureError}`
+    : capturedImage
+      ? "Drag to select an area. Press Esc or right-click to cancel."
+      : "Preparing screenshot..."}
+</p>
         </section>
       )}
 

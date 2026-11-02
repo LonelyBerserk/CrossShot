@@ -9,6 +9,9 @@ export async function displayCaptureNotification(
 ): Promise<void> {
   await invoke<void>("show_capture_notification", { payload });
 }
+export async function resizeCaptureNotification(expanded: boolean): Promise<void> {
+  await invoke<void>("resize_capture_notification", { expanded });
+}
 
 export async function listenForCaptureNotifications(
   handler: (payload: CaptureNotificationPayload) => void,

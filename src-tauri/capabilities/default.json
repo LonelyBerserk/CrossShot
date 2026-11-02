@@ -5,10 +5,15 @@
     "windows":  [
                     "main",
                     "capture-overlay",
-                    "capture-toast"
+                    "capture-toast",
+                    "tray-menu"
                 ],
     "permissions":  [
                         "core:default",
+                        "core:window:allow-hide",
+                        "core:window:allow-toggle-maximize",
+                        "core:window:allow-is-maximized",
+                        "core:window:allow-start-dragging",
                         "opener:default",
                         "store:default"
                     ]

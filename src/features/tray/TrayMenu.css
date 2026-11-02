@@ -1,0 +1,115 @@
+html:has(.tray-popup-root),
+body:has(.tray-popup-root),
+body:has(.tray-popup-root) #root {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+.tray-popup-root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  user-select: none;
+}
+
+.tray-popup-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 160px;
+  height: 80px;
+  padding: 12px;
+  background: rgba(27, 29, 39, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 19px;
+  box-shadow: none;
+}
+
+.tray-popup-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  color: #eeeefe;
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 15px;
+  outline: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease,
+    color 160ms ease;
+}
+
+.tray-popup-action svg {
+  width: 25px;
+  height: 25px;
+}
+
+.tray-popup-capture {
+  color: #c1b9ff;
+  background: rgba(126, 108, 255, 0.17);
+  border-color: rgba(156, 141, 255, 0.24);
+}
+
+.tray-popup-capture:hover {
+  color: #ffffff;
+  background: rgba(126, 108, 255, 0.34);
+  border-color: rgba(174, 161, 255, 0.54);
+  transform: translateY(-2px);
+}
+
+.tray-popup-action:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.tray-popup-action:focus-visible {
+  outline: 2px solid #a99fff;
+  outline-offset: 2px;
+}
+
+.tray-popup-record:disabled {
+  color: rgba(210, 213, 226, 0.38);
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.055);
+  cursor: not-allowed;
+}
+
+.tray-popup-coming-soon {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  padding: 2px 4px;
+  color: rgba(230, 231, 242, 0.72);
+  background: #363744;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.45px;
+  line-height: 1.15;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray-popup-action {
+    transition: none;
+  }
+}
