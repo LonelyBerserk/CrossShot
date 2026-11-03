@@ -1,0 +1,26 @@
+.editor {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  color: var(--color-text);
+  background: var(--color-bg);
+  user-select: none;
+}
+
+.editor__stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #101116;
+}
+
+.editor__selection {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  border: 1px solid #ffffff;
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}

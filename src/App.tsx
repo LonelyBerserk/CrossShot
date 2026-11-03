@@ -9,6 +9,7 @@ import {
   type AppLanguage,
   type AppTheme,
 } from "./services/settings";
+import { applyAppTheme } from "./services/theme";
 
 import { getMonitors } from "./services/monitors";
 import { captureFullVirtualDesktop, captureMonitor } from "./services/capture";
@@ -386,13 +387,9 @@ function App() {
     }
   }
 
-  // Apply selected theme
+  // Apply selected theme to the current WebView.
   useEffect(() => {
-    if (theme === "system") {
-      delete document.documentElement.dataset.theme;
-    } else {
-      document.documentElement.dataset.theme = theme;
-    }
+    applyAppTheme(theme);
   }, [theme]);
 
   // Save settings whenever language or theme changes

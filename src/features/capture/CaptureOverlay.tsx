@@ -11,6 +11,7 @@ import {
 import { captureFullVirtualDesktopRgba, captureVirtualDesktopRegion } from "../../services/capture";
 import { displayCaptureNotification } from "../../services/notifications";
 import { loadAppSettings } from "../../services/settings";
+import { applyAppTheme } from "../../services/theme";
 import {
   closeCaptureOverlay,
   listenForCaptureSessionReady,
@@ -19,6 +20,10 @@ import {
 import { getMonitors } from "../../services/monitors";
 import type { CapturedRgbaFrame } from "../../types/capture";
 import type { MonitorInfo } from "../../types/monitor";
+import Editor from "../editor/Editor";
+import { createEditorSession } from "../editor/model/createEditorSession";
+import type { EditorSession } from "../editor/model/EditorDocument";
+import { overlaySelectionToSourceBounds } from "../editor/model/coordinates";
 
 import "./CaptureOverlay.css";
 
@@ -216,6 +221,7 @@ function CaptureOverlay() {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [capturedImage, setCapturedImage] = useState<CapturedRgbaFrame | null>(null);
+  const [editorSession, setEditorSession] = useState<EditorSession | null>(null);
 
   const selection = useMemo<SelectionRect | null>(() => {
     if (!startPoint || !currentPoint) return null;
@@ -259,6 +265,7 @@ function CaptureOverlay() {
 
       // Reset all selection state for the new capture session.
       setCapturedImage(null);
+      setEditorSession(null);
       setStartPoint(null);
       setCurrentPoint(null);
       setIsSelecting(false);
@@ -302,6 +309,15 @@ function CaptureOverlay() {
       }
 
       unlisten = stopListening;
+
+      try {
+        const settings = await loadAppSettings();
+        if (isMounted) applyAppTheme(settings.theme);
+      } catch (error) {
+        console.error("Failed to load application theme for capture overlay:", error);
+      }
+
+      if (!isMounted) return;
 
       await markCaptureOverlayFrontendReady();
 
@@ -359,6 +375,7 @@ function CaptureOverlay() {
         return;
       }
 
+      if (editorSession) return;
       const isCopyShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c";
       if (event.key !== "Enter" && !isCopyShortcut) return;
 
@@ -462,7 +479,7 @@ function CaptureOverlay() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selection, isSelecting, isMoving, resizeHandle]);
+  }, [selection, isSelecting, isMoving, resizeHandle, editorSession]);
 
   useLayoutEffect(() => {
     if (!selection || !startPoint || !currentPoint || !overlayRef.current || !dimensionsRef.current) {
@@ -607,8 +624,36 @@ function CaptureOverlay() {
       return;
     }
     if (!isSelecting) return;
-    setCurrentPoint(getPoint(event));
+
+    const finalPoint = getPoint(event);
+    setCurrentPoint(finalPoint);
     setIsSelecting(false);
+
+    if (!startPoint) return;
+
+    const finalSelection: SelectionRect = {
+      left: Math.min(startPoint.x, finalPoint.x),
+      top: Math.min(startPoint.y, finalPoint.y),
+      width: Math.abs(finalPoint.x - startPoint.x),
+      height: Math.abs(finalPoint.y - startPoint.y),
+    };
+
+    if (finalSelection.width < 1 || finalSelection.height < 1) return;
+
+    const viewport = overlayRef.current?.getBoundingClientRect();
+    if (!viewport || viewport.width <= 0 || viewport.height <= 0) return;
+
+    try {
+      const sourceSelection = overlaySelectionToSourceBounds(
+        finalSelection,
+        { width: viewport.width, height: viewport.height },
+        { width: capturedImage.width, height: capturedImage.height },
+      );
+
+      setEditorSession(createEditorSession(capturedImage, sourceSelection));
+    } catch (error) {
+      console.error("Failed to create editor session:", error);
+    }
   };
 
   const handlePointerCancel = () => {
@@ -624,6 +669,8 @@ function CaptureOverlay() {
       console.error("Failed to close capture overlay:", error);
     });
   };
+
+  if (editorSession) return <Editor session={editorSession} />;
 
   return (
     <main
