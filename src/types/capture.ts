@@ -38,3 +38,12 @@ export interface RegionCaptureResult {
   clipboardCopied: boolean;
   clipboardError: string | null;
 }
+
+/**
+ * Raw RGBA screenshot frame used by the Canvas preview.
+ */
+export interface CapturedRgbaFrame {
+  imageData: ImageData;
+  width: number;
+  height: number;
+}

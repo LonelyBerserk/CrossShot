@@ -7,10 +7,8 @@ import {
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useTranslation } from "react-i18next";
 
-import i18n from "../../i18n";
-import { captureFullVirtualDesktopImage, captureVirtualDesktopRegion } from "../../services/capture";
+import { captureFullVirtualDesktopRgba, captureVirtualDesktopRegion } from "../../services/capture";
 import { displayCaptureNotification } from "../../services/notifications";
 import { loadAppSettings } from "../../services/settings";
 import {
@@ -19,7 +17,7 @@ import {
   markCaptureOverlayFrontendReady,
 } from "../../services/overlay";
 import { getMonitors } from "../../services/monitors";
-import type { CapturedImage } from "../../types/capture";
+import type { CapturedRgbaFrame } from "../../types/capture";
 import type { MonitorInfo } from "../../types/monitor";
 
 import "./CaptureOverlay.css";
@@ -195,7 +193,6 @@ function snapAxisDelta(
 }
 
 function CaptureOverlay() {
-  const { t } = useTranslation(undefined, { i18n });
 
   useLayoutEffect(() => {
     document.documentElement.classList.add("capture-overlay-window");
@@ -217,9 +214,8 @@ function CaptureOverlay() {
   const [labelPosition, setLabelPosition] = useState<LabelPosition | null>(null);
   const captureInProgressRef = useRef(false);
 
-  const capturedImageRef = useRef<CapturedImage | null>(null);
-  const [capturedImage, setCapturedImage] = useState<CapturedImage | null>(null);
-  const [captureError, setCaptureError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [capturedImage, setCapturedImage] = useState<CapturedRgbaFrame | null>(null);
 
   const selection = useMemo<SelectionRect | null>(() => {
     if (!startPoint || !currentPoint) return null;
@@ -259,17 +255,10 @@ function CaptureOverlay() {
 
       console.info("[PERF][Frontend] capture-session-ready event received");
 
-      // Release the previous preview before loading the next session.
-      const previousImage = capturedImageRef.current;
-      capturedImageRef.current = null;
 
-      if (previousImage) {
-        URL.revokeObjectURL(previousImage.url);
-      }
 
       // Reset all selection state for the new capture session.
       setCapturedImage(null);
-      setCaptureError(null);
       setStartPoint(null);
       setCurrentPoint(null);
       setIsSelecting(false);
@@ -281,14 +270,11 @@ function CaptureOverlay() {
       moveOriginRef.current = null;
       resizeOriginRef.current = null;
 
-      void captureFullVirtualDesktopImage()
+      void captureFullVirtualDesktopRgba()
         .then((image) => {
           if (!isMounted || currentGeneration !== sessionGeneration) {
-            URL.revokeObjectURL(image.url);
             return;
           }
-
-          capturedImageRef.current = image;
           setCapturedImage(image);
 
           console.info("[PERF][Frontend] capture session image ready", {
@@ -300,8 +286,6 @@ function CaptureOverlay() {
         .catch((error: unknown) => {
           if (!isMounted || currentGeneration !== sessionGeneration) return;
 
-          const message = error instanceof Error ? error.message : String(error);
-          setCaptureError(message);
 
           console.error("Failed to load capture session image:", error);
         });
@@ -334,12 +318,7 @@ function CaptureOverlay() {
       sessionGeneration += 1;
       unlisten?.();
 
-      const currentImage = capturedImageRef.current;
-      capturedImageRef.current = null;
 
-      if (currentImage) {
-        URL.revokeObjectURL(currentImage.url);
-      }
     };
   }, []);
 
@@ -348,9 +327,25 @@ function CaptureOverlay() {
   useLayoutEffect(() => {
     if (!capturedImage) return;
 
-    console.info("[PERF][Frontend] screenshot committed to DOM", {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const drawStartedAt = performance.now();
+    canvas.width = capturedImage.width;
+    canvas.height = capturedImage.height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      console.error("Canvas 2D context is unavailable.");
+      return;
+    }
+
+    context.putImageData(capturedImage.imageData, 0, 0);
+
+    console.info("[PERF][Frontend] screenshot committed to Canvas", {
       width: capturedImage.width,
       height: capturedImage.height,
+      drawMs: Number((performance.now() - drawStartedAt).toFixed(1)),
     });
   }, [capturedImage]);
 
@@ -641,26 +636,11 @@ function CaptureOverlay() {
       onContextMenu={handleContextMenu}
     >
       {capturedImage && (
-        <img
+        <canvas
+          ref={canvasRef}
           className="capture-overlay__screenshot"
-          src={capturedImage.url}
-          alt=""
           aria-hidden="true"
-          draggable={false}
         />
-      )}
-      {!selection && (
-        <section className="capture-overlay__hint">
-          <span className="capture-overlay__brand">CrossShot</span>
-          <h1>{t("capture.area")}</h1>
-          <p>
-  {captureError
-    ? `Screenshot unavailable: ${captureError}`
-    : capturedImage
-      ? "Drag to select an area. Press Esc or right-click to cancel."
-      : "Preparing screenshot..."}
-</p>
-        </section>
       )}
 
       {selection && (

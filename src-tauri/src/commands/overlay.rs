@@ -8,10 +8,15 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-// Stores the PNG image and frontend readiness for capture sessions.
+// Stores the raw RGBA frame and frontend readiness for capture sessions.
+pub(crate) struct PendingRgbaFrame {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) pixels: Vec<u8>,
+}
 #[derive(Default)]
 pub struct CaptureSessionState {
-    pub(crate) pending_png: Mutex<Option<Vec<u8>>>,
+    pub(crate) pending_rgba: Mutex<Option<PendingRgbaFrame>>,
     pub(crate) frontend_ready: Arc<AtomicBool>,
 }
 
@@ -22,7 +27,7 @@ pub fn mark_capture_overlay_frontend_ready(state: State<'_, CaptureSessionState>
 
     eprintln!("[PERF][Rust] capture overlay frontend is READY: event listener registered");
 }
-use crate::services::capture::capture_full_virtual_desktop_png;
+use crate::services::capture::capture_full_virtual_desktop_rgba;
 use crate::services::monitor::list_monitors;
 
 #[cfg(windows)]
@@ -362,14 +367,17 @@ pub async fn open_capture_overlay(
     // Capture the desktop before creating or showing the overlay.
     let perf_capture_started_at = std::time::Instant::now();
 
-    let png_bytes = tauri::async_runtime::spawn_blocking(capture_full_virtual_desktop_png)
-        .await
-        .map_err(|error| format!("Screenshot capture task failed: {error}"))??;
+    let (width, height, pixels) =
+        tauri::async_runtime::spawn_blocking(capture_full_virtual_desktop_rgba)
+            .await
+            .map_err(|error| format!("Screenshot capture task failed: {error}"))??;
 
     eprintln!(
-        "[PERF][Rust] desktop capture + composition + PNG: {} ms; bytes={}",
+        "[PERF][Rust] desktop capture + composition + RGBA: {} ms; size={}x{}; bytes={}",
         perf_capture_started_at.elapsed().as_millis(),
-        png_bytes.len()
+        width,
+        height,
+        pixels.len()
     );
 
     let _ = monitor_id;
@@ -391,16 +399,20 @@ pub async fn open_capture_overlay(
     let perf_store_started_at = std::time::Instant::now();
 
     {
-        let mut pending_png = state
-            .pending_png
+        let mut pending_rgba = state
+            .pending_rgba
             .lock()
             .map_err(|_| "Capture session storage is unavailable".to_string())?;
 
-        *pending_png = Some(png_bytes);
+        *pending_rgba = Some(PendingRgbaFrame {
+            width,
+            height,
+            pixels,
+        });
     }
 
     eprintln!(
-        "[PERF][Rust] storing PNG in session state: {} ms",
+        "[PERF][Rust] storing RGBA frame in session state: {} ms",
         perf_store_started_at.elapsed().as_millis()
     );
 

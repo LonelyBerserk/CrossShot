@@ -368,7 +368,7 @@ pub fn run() {
             commands::capture::capture_monitor,
             commands::capture::capture_monitor_region,
             commands::capture::capture_virtual_desktop_region,
-            commands::capture::capture_full_virtual_desktop_png,
+            commands::capture::capture_full_virtual_desktop_rgba,
             commands::capture::capture_full_virtual_desktop,
             commands::overlay::open_capture_overlay,
             commands::overlay::close_capture_overlay,

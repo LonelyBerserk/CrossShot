@@ -89,32 +89,48 @@ pub async fn capture_virtual_desktop_region(
     }
 }
 
-// Returns the PNG prepared by open_capture_overlay through binary IPC.
+/// Transfers the pending RGBA frame through one binary IPC response.
+/// The final 8 bytes contain width and height as little-endian u32 values.
 #[tauri::command]
-pub fn capture_full_virtual_desktop_png(
+pub fn capture_full_virtual_desktop_rgba(
     state: tauri::State<'_, crate::commands::overlay::CaptureSessionState>,
 ) -> Result<tauri::ipc::Response, String> {
-    let perf_command_started_at = std::time::Instant::now();
+    let frame = state
+        .pending_rgba
+        .lock()
+        .map_err(|_| "Capture session storage is unavailable".to_string())?
+        .take()
+        .ok_or_else(|| "No screenshot is waiting for this capture session".to_string())?;
 
-    let png_bytes = {
-        let mut pending_png = state
-            .pending_png
-            .lock()
-            .map_err(|_| "Capture session storage is unavailable".to_string())?;
+    let expected_length = u64::from(frame.width)
+        .checked_mul(u64::from(frame.height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .and_then(|bytes| usize::try_from(bytes).ok())
+        .ok_or_else(|| "RGBA frame dimensions are invalid".to_string())?;
 
-        pending_png
-            .take()
-            .ok_or_else(|| "No screenshot is waiting for this capture session".to_string())?
-    };
+    if frame.pixels.len() != expected_length {
+        return Err(format!(
+            "RGBA frame size mismatch: expected {expected_length} bytes, received {}",
+            frame.pixels.len()
+        ));
+    }
+
+    let width_bytes = frame.width.to_le_bytes();
+    let height_bytes = frame.height.to_le_bytes();
+    let pixel_byte_length = frame.pixels.len();
+    let mut payload = frame.pixels;
+    payload.extend_from_slice(&width_bytes);
+    payload.extend_from_slice(&height_bytes);
 
     eprintln!(
-        "[PERF][Rust] PNG IPC command prepared: {} ms; bytes={}",
-        perf_command_started_at.elapsed().as_millis(),
-        png_bytes.len()
+        "[PERF][Rust] RGBA IPC command prepared; pixel_bytes={}; payload_bytes={}",
+        pixel_byte_length,
+        payload.len()
     );
 
-    Ok(tauri::ipc::Response::new(png_bytes))
+    Ok(tauri::ipc::Response::new(payload))
 }
+
 /// Captures the complete virtual desktop without opening the selection overlay.
 #[tauri::command]
 pub async fn capture_full_virtual_desktop(app: AppHandle) -> Result<RegionCaptureResult, String> {
